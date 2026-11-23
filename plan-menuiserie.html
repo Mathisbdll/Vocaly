@@ -250,7 +250,8 @@ button, select, input { touch-action: manipulation; }
         <li><b>Molette</b> zoom · <b>Espace + glisser</b> déplacer</li>
         <li><b>Maj</b> trait droit (0°, 45°, 90°)</li>
         <li><b>Flèches</b> décaler la sélection (Maj ×10)</li>
-        <li><b>Suppr</b> effacer · <b>Ctrl+D</b> dupliquer</li>
+        <li><b>Suppr</b> effacer · <b>Ctrl+D</b> dupliquer · <b>Ctrl+A</b> tout</li>
+        <li><b>Appui long + glisser</b> ou <b>Maj + glisser</b> : sélection multiple</li>
         <li><b>Échap</b> annuler le tracé en cours</li>
         <li>Grille fine : 1 cm · grille forte : 10 cm</li>
       </ul>
@@ -275,7 +276,8 @@ let W = 0, H = 0, dpr = 1;
 let view = { s: 8, ox: 80, oy: 80 };           // s = pixels par cm
 let shapes = [];
 let nextId = 1;
-let selId = null;
+let selSet = new Set();         // éléments sélectionnés
+let lpTimer = null;            // appui long
 let tool = "select";
 let settings = { snap: 1, unit: "cm", showDims: true };
 let undoStack = [], redoStack = [];
@@ -330,7 +332,7 @@ function pushUndo(snap) {
 }
 function restore(json) {
   shapes = JSON.parse(json);
-  if (!shapes.some((s) => s.id === selId)) selId = null;
+  selSet = new Set([...selSet].filter((id) => shapes.some((s) => s.id === id)));
   nextId = shapes.reduce((m, s) => Math.max(m, s.id), 0) + 1;
 }
 function undo() {
@@ -352,10 +354,12 @@ function addShape(sh) {
   pushUndo(snapshot());
   sh.id = nextId++;
   shapes.push(sh);
-  selId = sh.id;
+  selectOnly(sh.id);
   persist();
 }
-const selected = () => shapes.find((s) => s.id === selId) || null;
+function selectOnly(id) { selSet = id == null ? new Set() : new Set([id]); }
+const selected = () => selSet.size === 1 ? shapes.find((s) => selSet.has(s.id)) || null : null;
+const selectedAll = () => shapes.filter((s) => selSet.has(s.id));
 
 /* ---------- plan d'exemple ---------- */
 function sample() {
@@ -548,7 +552,7 @@ function drawShape(c, v, sh, isSel, isDraft, exporting) {
 function render(c, v, w, h, exporting) {
   c.fillStyle = COLORS.bg; c.fillRect(0, 0, w, h);
   drawGrid(c, v, w, h);
-  for (const sh of shapes) drawShape(c, v, sh, !exporting && sh.id === selId, false, exporting);
+  for (const sh of shapes) drawShape(c, v, sh, !exporting && selSet.has(sh.id), false, exporting);
   if (exporting) return;
   drawRulers(c, v, w, h);
   if (draft) drawShape(c, v, draft, false, true);
@@ -560,6 +564,14 @@ function render(c, v, w, h, exporting) {
       const r = COARSE ? 7.5 : 4.5;
       c.fillRect(x - r, y - r, 2 * r, 2 * r); c.strokeRect(x - r, y - r, 2 * r, 2 * r);
     }
+  }
+  if (drag && drag.mode === "marquee") {
+    const [ax, ay] = toScreen(drag.x0, drag.y0, v), [bx, by] = toScreen(drag.x1, drag.y1, v);
+    c.save();
+    c.fillStyle = "rgba(255,209,102,0.10)"; c.strokeStyle = COLORS.sel; c.lineWidth = 1.5; c.setLineDash([6, 4]);
+    c.fillRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
+    c.strokeRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
+    c.restore();
   }
   if (snapMark) {
     const [x, y] = toScreen(snapMark.x, snapMark.y, v);
@@ -712,7 +724,7 @@ function pointerDown(e, sx, sy) {
   try { cv.setPointerCapture(e.pointerId); } catch (_) {}
 
   if (pointers.size === 2) {
-    tapStart = null;
+    tapStart = null; clearTimeout(lpTimer);
     // pincer pour zoomer : on abandonne l'action en cours
     if (drag && drag.before && drag.changed) restore(drag.before);
     draft = null; drag = null; snapMark = null;
@@ -756,14 +768,42 @@ function pointerDown(e, sx, sy) {
       }
     }
     const hit = hitTest(w.x, w.y, tol);
+    if (hit && e.shiftKey) {
+      // Maj + clic : ajouter / retirer de la sélection
+      if (selSet.has(hit.id)) selSet.delete(hit.id); else selSet.add(hit.id);
+      refresh();
+      return;
+    }
+    if (!hit && e.shiftKey) {
+      // Maj + glisser dans le vide (souris) : cadre de sélection direct
+      drag = { mode: "marquee", x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+      selectOnly(null); refresh();
+      return;
+    }
     if (hit) {
-      selId = hit.id;
-      drag = { mode: "move", start: w, orig: JSON.parse(JSON.stringify(hit)), before: snapshot(), changed: false };
+      if (!selSet.has(hit.id)) selectOnly(hit.id);
+      const orig = new Map(selectedAll().map((x) => [x.id, JSON.parse(JSON.stringify(x))]));
+      drag = { mode: "move", start: w, orig, before: snapshot(), changed: false };
     } else {
-      selId = null;
+      selectOnly(null);
       drag = { mode: "pan", sx, sy, ox: view.ox, oy: view.oy };
       cv.classList.add("panning");
     }
+    // appui long sans bouger : on passe en cadre de sélection
+    const pid = e.pointerId;
+    clearTimeout(lpTimer);
+    lpTimer = setTimeout(() => {
+      lpTimer = null;
+      if (!drag || drag.pid !== pid || drag.changed || pointers.size !== 1) return;
+      if (tapStart && (tapStart.id !== pid || tapStart.moved)) return;
+      if (drag.mode === "pan") { view.ox = drag.ox; view.oy = drag.oy; }
+      drag = { mode: "marquee", pid, x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+      tapStart = null;
+      cv.classList.remove("panning");
+      selectOnly(null);
+      try { navigator.vibrate && navigator.vibrate(15); } catch (_) {}
+      refresh();
+    }, 450);
     refresh();
     return;
   }
@@ -789,7 +829,7 @@ cv.addEventListener("pointermove", (e) => {
   if (e.pointerType === "touch" && penDown) return;            // paume
   const { sx, sy } = localPos(e);
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { sx, sy });
-  if (tapStart && tapStart.id === e.pointerId && Math.hypot(sx - tapStart.sx, sy - tapStart.sy) > 10) tapStart.moved = true;
+  if (tapStart && tapStart.id === e.pointerId && Math.hypot(sx - tapStart.sx, sy - tapStart.sy) > 10) { tapStart.moved = true; clearTimeout(lpTimer); }
   if (drag && drag.pid !== undefined && drag.pid !== e.pointerId) return;
 
   if (pinch && pointers.size === 2) {
@@ -813,15 +853,25 @@ cv.addEventListener("pointermove", (e) => {
     return;
   }
 
+  if (drag && drag.mode === "marquee") {
+    drag.x1 = w.x; drag.y1 = w.y;
+    const r = { x0: Math.min(drag.x0, w.x), y0: Math.min(drag.y0, w.y), x1: Math.max(drag.x0, w.x), y1: Math.max(drag.y0, w.y) };
+    selSet = new Set(shapes.filter((s) => shapeInRect(s, r)).map((s) => s.id));
+    draw();
+    return;
+  }
+
   if (drag && drag.mode === "move") {
-    const s = selected(); if (!s) return;
+    const list = selectedAll(); if (!list.length) return;
     let dx = w.x - drag.start.x, dy = w.y - drag.start.y;
     if (settings.snap > 0) { dx = round(dx, settings.snap); dy = round(dy, settings.snap); }
     if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
-    const o = drag.orig;
-    const mv = (k, d) => { if (k in o) s[k] = clean(o[k] + d); };
-    ["x", "x1", "x2", "cx"].forEach((k) => mv(k, dx));
-    ["y", "y1", "y2", "cy"].forEach((k) => mv(k, dy));
+    for (const s of list) {
+      const o = drag.orig.get(s.id); if (!o) continue;
+      const mv = (k, d) => { if (k in o) s[k] = clean(o[k] + d); };
+      ["x", "x1", "x2", "cx"].forEach((k) => mv(k, dx));
+      ["y", "y1", "y2", "cy"].forEach((k) => mv(k, dy));
+    }
     drag.changed = drag.changed || dx !== 0 || dy !== 0;
     draw();
     return;
@@ -903,12 +953,14 @@ function endPointer(e) {
 
 function endCore(e) {
   pointers.delete(e.pointerId);
+  clearTimeout(lpTimer); lpTimer = null;
   if (pinch) { if (pointers.size < 2) pinch = null; persist(); return; }
   cv.classList.remove("panning");
   if (!drag) return;
   if (drag.pid !== undefined && drag.pid !== e.pointerId) return;
   const d = drag; drag = null;
   if (d.mode === "pan") { persist(); return; }
+  if (d.mode === "marquee") { refresh(); return; }
   if (d.mode === "move" || d.mode === "handle") {
     snapMark = null;
     if (d.changed) pushUndo(d.before);
@@ -935,7 +987,7 @@ function doubleTap(sx, sy, ptype) {
   const hit = hitTest(w.x, w.y, tol);
   if (!hit) return;
   draft = null; drag = null; snapMark = null;
-  selId = hit.id;
+  selectOnly(hit.id);
   refresh();
   openEditor(hit, sx, sy);
 }
@@ -1011,7 +1063,7 @@ cv.addEventListener("wheel", (e) => {
 
 /* ---------- outils ---------- */
 const HINTS = {
-  select: "Touchez un élément pour le sélectionner, glissez pour le déplacer. Double-touchez un trait pour changer sa mesure.",
+  select: "Touchez un élément pour le sélectionner, glissez pour le déplacer. Double-touchez un trait pour changer sa mesure. Restez appuyé puis glissez pour sélectionner plusieurs éléments.",
   pan: "Glissez pour déplacer la vue.",
   line: "Cliquez-glissez pour tracer un trait. Maj : 0°/45°/90°.",
   rect: "Cliquez-glissez pour dessiner un panneau.",
@@ -1020,7 +1072,8 @@ const HINTS = {
   text: "Cliquez pour poser un texte.",
 };
 function setHint() {
-  const h = draft && draft.type === "dim" && draft.stage === 2 ? "Déplacez la souris pour placer la cote, puis cliquez." : HINTS[tool];
+  const h = drag && drag.mode === "marquee" ? "Glissez pour entourer les éléments à sélectionner."
+    : draft && draft.type === "dim" && draft.stage === 2 ? "Déplacez la souris pour placer la cote, puis cliquez." : HINTS[tool];
   $("#hint").textContent = h;
 }
 function setTool(t) {
@@ -1078,6 +1131,7 @@ function buildPanel() {
   const s = selected();
   box.innerHTML = "";
   panelFields = [];
+  if (!s && selSet.size > 1) { buildMultiPanel(box); return; }
   if (!s) {
     box.innerHTML = `<h2>Sélection</h2><p class="empty">Aucun élément sélectionné. Choisissez un outil en haut pour dessiner, ou l'outil Sélection pour modifier une pièce et saisir ses cotes exactes.</p>`;
     return;
@@ -1130,10 +1184,35 @@ function updatePanelValues() {
     input.value = f.ro || f.text ? v : (f.len ? toUnit(v) : v);
   }
 }
+function buildMultiPanel(box) {
+  const list = selectedAll();
+  const counts = {};
+  list.forEach((s) => { counts[s.type] = (counts[s.type] || 0) + 1; });
+  const PLURAL = { line: "traits", rect: "panneaux", circle: "perçages", dim: "cotes", text: "textes" };
+  const SING = { line: "trait", rect: "panneau", circle: "perçage", dim: "cote", text: "texte" };
+  const h2 = document.createElement("h2"); h2.textContent = "Sélection";
+  const h3 = document.createElement("h3"); h3.textContent = `${list.length} éléments`;
+  const p = document.createElement("p"); p.className = "empty"; p.style.margin = "0 0 10px";
+  p.textContent = Object.entries(counts).map(([t, n]) => `${n} ${n > 1 ? PLURAL[t] : SING[t]}`).join(" · ");
+  const grid = document.createElement("div"); grid.className = "fields";
+  const lines = list.filter((s) => s.type === "line");
+  const rects = list.filter((s) => s.type === "rect");
+  const addRo = (label, value) => {
+    const lab = document.createElement("label"); lab.textContent = label;
+    const input = document.createElement("input"); input.readOnly = true; input.tabIndex = -1; input.value = value;
+    grid.append(lab, input);
+  };
+  if (lines.length) addRo("Longueur totale", fmt(lines.reduce((a, s) => a + Math.hypot(s.x2 - s.x1, s.y2 - s.y1), 0)));
+  if (rects.length) addRo("Surface panneaux", num(rects.reduce((a, s) => a + s.w * s.h, 0) / 10000, 3) + " m²");
+  const row = document.createElement("div"); row.className = "row"; row.style.marginTop = "12px";
+  const mk = (txt, fn, cls) => { const b = document.createElement("button"); b.textContent = txt; b.onclick = fn; if (cls) b.className = cls; return b; };
+  row.append(mk("Dupliquer", duplicate), mk("Arrière-plan", toBack), mk("Désélectionner", () => { selectOnly(null); refresh(); }), mk("Supprimer", remove, "danger"));
+  box.append(h2, h3, p, grid, row);
+}
 let panelFor = null;
 function refresh() {
-  const s = selected();
-  if ((s ? s.id : null) !== panelFor) { panelFor = s ? s.id : null; buildPanel(); }
+  const key = [...selSet].sort((a, b) => a - b).join(",");
+  if (key !== panelFor) { panelFor = key; buildPanel(); }
   else updatePanelValues();
   updateButtons(); setHint(); draw();
 }
@@ -1143,24 +1222,55 @@ function updateButtons() {
 }
 
 function remove() {
-  if (!selected()) return;
+  if (!selSet.size) return;
   pushUndo(snapshot());
-  shapes = shapes.filter((s) => s.id !== selId);
-  selId = null; persist(); refresh();
+  shapes = shapes.filter((s) => !selSet.has(s.id));
+  selectOnly(null); persist(); refresh();
 }
 function duplicate() {
-  const s = selected(); if (!s) return;
-  const c = JSON.parse(JSON.stringify(s));
+  const list = selectedAll(); if (!list.length) return;
+  pushUndo(snapshot());
   const d = settings.snap > 0 ? Math.max(settings.snap, 1) * 2 : 2;
-  ["x", "x1", "x2", "cx"].forEach((k) => { if (k in c) c[k] += d; });
-  ["y", "y1", "y2", "cy"].forEach((k) => { if (k in c) c[k] += d; });
-  addShape(c); refresh();
+  const ids = [];
+  for (const s of list) {
+    const c = JSON.parse(JSON.stringify(s));
+    ["x", "x1", "x2", "cx"].forEach((k) => { if (k in c) c[k] += d; });
+    ["y", "y1", "y2", "cy"].forEach((k) => { if (k in c) c[k] += d; });
+    c.id = nextId++; shapes.push(c); ids.push(c.id);
+  }
+  selSet = new Set(ids);
+  persist(); refresh();
 }
 function toBack() {
-  const s = selected(); if (!s) return;
+  const list = selectedAll(); if (!list.length) return;
   pushUndo(snapshot());
-  shapes = [s, ...shapes.filter((x) => x !== s)];
+  shapes = [...list, ...shapes.filter((x) => !selSet.has(x.id))];
   persist(); draw();
+}
+
+/* ---------- cadre de sélection ---------- */
+function segCross(ax, ay, bx, by, cx, cy, dx, dy) {
+  const o = (px, py, qx, qy, rx, ry) => Math.sign((qx - px) * (ry - py) - (qy - py) * (rx - px));
+  return o(ax, ay, bx, by, cx, cy) !== o(ax, ay, bx, by, dx, dy) && o(cx, cy, dx, dy, ax, ay) !== o(cx, cy, dx, dy, bx, by);
+}
+function segInRect(x1, y1, x2, y2, r) {
+  const inside = (x, y) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
+  if (inside(x1, y1) || inside(x2, y2)) return true;
+  return segCross(x1, y1, x2, y2, r.x0, r.y0, r.x1, r.y0) || segCross(x1, y1, x2, y2, r.x1, r.y0, r.x1, r.y1) ||
+    segCross(x1, y1, x2, y2, r.x1, r.y1, r.x0, r.y1) || segCross(x1, y1, x2, y2, r.x0, r.y1, r.x0, r.y0);
+}
+function boxOverlap(ax0, ay0, ax1, ay1, r) { return ax0 <= r.x1 && ax1 >= r.x0 && ay0 <= r.y1 && ay1 >= r.y0; }
+// un élément est pris dès que le cadre touche un de ses traits
+function shapeInRect(sh, r) {
+  switch (sh.type) {
+    case "line": return segInRect(sh.x1, sh.y1, sh.x2, sh.y2, r);
+    case "dim": { const g = dimGeom(sh); return segInRect(g.ax, g.ay, g.bx, g.by, r); }
+    case "rect": return segInRect(sh.x, sh.y, sh.x + sh.w, sh.y, r) || segInRect(sh.x + sh.w, sh.y, sh.x + sh.w, sh.y + sh.h, r) ||
+      segInRect(sh.x + sh.w, sh.y + sh.h, sh.x, sh.y + sh.h, r) || segInRect(sh.x, sh.y + sh.h, sh.x, sh.y, r);
+    case "circle": return boxOverlap(sh.cx - sh.r, sh.cy - sh.r, sh.cx + sh.r, sh.cy + sh.r, r);
+    case "text": return boxOverlap(sh.x, sh.y, sh.x + textWidth(sh), sh.y + sh.size * 1.2, r);
+  }
+  return false;
 }
 
 /* ---------- vue ---------- */
@@ -1202,7 +1312,7 @@ function download(name, href) {
 }
 $("#new").onclick = () => {
   if (shapes.length) pushUndo(snapshot());
-  shapes = []; selId = null; nextId = 1;
+  shapes = []; selectOnly(null); nextId = 1;
   persist(); refresh(); fit();
   $("#hint").textContent = "Nouveau plan. Ctrl+Z pour récupérer l'ancien.";
 };
@@ -1221,7 +1331,7 @@ $("#file").onchange = async (e) => {
     const list = Array.isArray(data) ? data : data.shapes;
     if (!Array.isArray(list)) throw new Error("format");
     pushUndo(snapshot());
-    shapes = list; selId = null;
+    shapes = list; selectOnly(null);
     nextId = shapes.reduce((m, s) => Math.max(m, s.id || 0), 0) + 1;
     shapes.forEach((s) => { if (!s.id) s.id = nextId++; });
     persist(); refresh(); fit();
@@ -1261,25 +1371,27 @@ window.addEventListener("keydown", (e) => {
   if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
   if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); duplicate(); return; }
+  if (mod && e.key.toLowerCase() === "a") { e.preventDefault(); setTool("select"); selSet = new Set(shapes.map((s) => s.id)); refresh(); return; }
   if (mod) return;
   if (e.code === "Space") { if (!spaceDown) { spaceDown = true; cv.classList.add("pan"); } e.preventDefault(); return; }
   const map = { v: "select", h: "pan", l: "line", r: "rect", c: "circle", d: "dim", t: "text" };
   const k = e.key.toLowerCase();
   if (map[k]) { setTool(map[k]); return; }
-  if (e.key === "Escape") { if (draft) { draft = null; snapMark = null; } else { selId = null; } drag = null; refresh(); return; }
+  if (e.key === "Escape") { if (draft) { draft = null; snapMark = null; } else { selectOnly(null); } drag = null; refresh(); return; }
   if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); remove(); return; }
   if (e.key === "+" || e.key === "=") { zoomAt(W / 2, H / 2, 1.25); return; }
   if (e.key === "-") { zoomAt(W / 2, H / 2, 0.8); return; }
   if (e.key === "0") { fit(); return; }
   const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-  if (arrows[e.key] && selected()) {
+  if (arrows[e.key] && selSet.size) {
     e.preventDefault();
-    const s = selected();
     const step = (settings.snap > 0 ? settings.snap : 0.1) * (e.shiftKey ? 10 : 1);
     const [dx, dy] = arrows[e.key];
     pushUndo(snapshot());
-    ["x", "x1", "x2", "cx"].forEach((k) => { if (k in s) s[k] = clean(s[k] + dx * step); });
-    ["y", "y1", "y2", "cy"].forEach((k) => { if (k in s) s[k] = clean(s[k] + dy * step); });
+    for (const s of selectedAll()) {
+      ["x", "x1", "x2", "cx"].forEach((k) => { if (k in s) s[k] = clean(s[k] + dx * step); });
+      ["y", "y1", "y2", "cy"].forEach((k) => { if (k in s) s[k] = clean(s[k] + dy * step); });
+    }
     persist(); refresh();
   }
 });
