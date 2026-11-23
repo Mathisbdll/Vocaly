@@ -1,0 +1,1151 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plan Menuiserie</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout : barre d'outils en haut, plan bleu plein écran, panneau de propriétés à droite (en bas sur mobile). */
+:root {
+  --blueprint: #0b2447;      /* fond du plan */
+  --chrome: #0a1a33;         /* barres et panneaux */
+  --chrome-2: #11264a;       /* champs, survol */
+  --rule: #23406c;           /* séparateurs */
+  --ink: #e6efff;            /* texte principal */
+  --ink-dim: #8ea6cc;        /* texte secondaire */
+  --pencil: #ffd166;         /* sélection / accent */
+  --cyan: #7fdbff;           /* cotes */
+  --danger: #ff7a7a;
+  --f-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--blueprint); color: var(--ink); font: 14px/1.4 var(--f-ui); }
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "top top" "stage side" "status side";
+}
+header {
+  grid-area: top;
+  display: flex; align-items: center; gap: 6px;
+  padding-block: 8px;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  background: var(--chrome); border-bottom: 1px solid var(--rule);
+  overflow-x: auto; scrollbar-width: thin;
+}
+.brand { font-weight: 600; letter-spacing: .02em; white-space: nowrap; margin-right: 8px; display: flex; align-items: center; gap: 8px; }
+.brand small { font: 500 11px var(--f-mono); color: var(--ink-dim); letter-spacing: .08em; text-transform: uppercase; }
+.group { display: flex; gap: 2px; padding: 2px; background: var(--chrome-2); border-radius: 8px; flex: none; }
+.sep { width: 1px; align-self: stretch; background: var(--rule); margin: 0 4px; flex: none; }
+.spacer { flex: 1 0 8px; }
+button, .btn {
+  font: inherit; color: var(--ink); background: transparent; border: 0; border-radius: 6px;
+  padding: 6px 9px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; flex: none;
+}
+button:hover, .btn:hover { background: #1a3563; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--pencil); outline-offset: 1px; }
+button[aria-pressed="true"] { background: var(--pencil); color: #10223f; }
+button:disabled { opacity: .35; cursor: default; background: transparent; }
+button svg { width: 18px; height: 18px; flex: none; }
+.lbl { font-size: 13px; }
+kbd { font: 11px var(--f-mono); color: var(--ink-dim); }
+
+#stage { grid-area: stage; position: relative; overflow: hidden; touch-action: none; }
+#cv { position: absolute; inset: 0; display: block; cursor: crosshair; }
+#cv.select { cursor: default; }
+#cv.pan, #cv.panning { cursor: grab; }
+#cv.panning { cursor: grabbing; }
+
+aside {
+  grid-area: side; background: var(--chrome); border-left: 1px solid var(--rule);
+  overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 18px;
+  padding-right: max(14px, env(safe-area-inset-right, 0px));
+}
+aside h2 { margin: 0 0 8px; font: 600 11px var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim); }
+aside h3 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+.fields { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; align-items: center; }
+.fields label { color: var(--ink-dim); font-size: 13px; }
+.unit-input { display: flex; align-items: center; background: var(--chrome-2); border: 1px solid var(--rule); border-radius: 6px; }
+.unit-input input { flex: 1; min-width: 0; }
+.unit-input span { font: 12px var(--f-mono); color: var(--ink-dim); padding-right: 8px; }
+input, select {
+  font: 13px var(--f-mono); color: var(--ink); background: var(--chrome-2);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 6px 8px; width: 100%;
+}
+.unit-input input { border: 0; background: transparent; }
+input[type="checkbox"] { width: auto; accent-color: var(--pencil); }
+.row { display: flex; gap: 6px; flex-wrap: wrap; }
+.row button { background: var(--chrome-2); border: 1px solid var(--rule); }
+.row button.danger { color: var(--danger); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.help { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; color: var(--ink-dim); }
+.help b { color: var(--ink); font-weight: 500; }
+.empty { color: var(--ink-dim); font-size: 13px; margin: 0; }
+
+footer {
+  grid-area: status; display: flex; gap: 16px; align-items: center;
+  padding-block: 6px;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: 12px;
+  background: var(--chrome); border-top: 1px solid var(--rule);
+  font: 12px var(--f-mono); color: var(--ink-dim); white-space: nowrap; overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+footer b { color: var(--ink); font-weight: 500; }
+#hint { overflow: hidden; text-overflow: ellipsis; }
+#file { display: none; }
+
+@media (max-width: 760px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "top" "stage" "status" "side";
+  }
+  aside { border-left: 0; border-top: 1px solid var(--rule); max-height: 34vh; padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
+  .lbl, kbd, .brand small, #hint { display: none; }
+  aside .settings-help { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffd166" stroke-width="1.6" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M9 3v18"/></svg>
+      Plan Menuiserie <small>2D · cm</small>
+    </div>
+    <div class="group" role="toolbar" aria-label="Outils">
+      <button data-tool="select" title="Sélection (V)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M5 3l13 8-6 1.5L9 19z"/></svg><span class="lbl">Sélection</span></button>
+      <button data-tool="pan" title="Déplacer la vue (H ou Espace)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg><span class="lbl">Vue</span></button>
+      <button data-tool="line" title="Trait (L)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 19L19 5"/><circle cx="5" cy="19" r="1.6" fill="currentColor"/><circle cx="19" cy="5" r="1.6" fill="currentColor"/></svg><span class="lbl">Trait</span></button>
+      <button data-tool="rect" title="Panneau / rectangle (R)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="6" width="16" height="12"/></svg><span class="lbl">Panneau</span></button>
+      <button data-tool="circle" title="Cercle / perçage (C)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M10 12h4M12 10v4"/></svg><span class="lbl">Perçage</span></button>
+      <button data-tool="dim" title="Cote (D)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7v10M21 7v10M3 12h18M3 12l3-2.5M3 12l3 2.5M21 12l-3-2.5M21 12l-3 2.5"/></svg><span class="lbl">Cote</span></button>
+      <button data-tool="text" title="Texte (T)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg><span class="lbl">Texte</span></button>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <button id="undo" title="Annuler (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg></button>
+      <button id="redo" title="Rétablir (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h3"/></svg></button>
+    </div>
+    <div class="group">
+      <button id="zoomOut" title="Dézoomer (-)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M16 16l5 5"/></svg></button>
+      <button id="zoomIn" title="Zoomer (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M11 8v6M16 16l5 5"/></svg></button>
+      <button id="fit" title="Ajuster le plan à l'écran (0)"><span class="lbl" style="display:inline">Ajuster</span></button>
+      <button id="real" title="Taille réelle approximative : 1 cm à l'écran = 1 cm"><span class="lbl" style="display:inline">1:1</span></button>
+    </div>
+    <div class="spacer"></div>
+    <div class="group">
+      <button id="new" title="Nouveau plan">Nouveau</button>
+      <button id="open" title="Ouvrir un plan (.json)">Ouvrir</button>
+      <button id="save" title="Enregistrer le plan (.json)">Enregistrer</button>
+      <button id="png" title="Exporter en image PNG">PNG</button>
+    </div>
+    <input type="file" id="file" accept=".json,application/json">
+  </header>
+
+  <div id="stage"><canvas id="cv"></canvas></div>
+
+  <footer>
+    <span>X <b id="cx">0</b></span>
+    <span>Y <b id="cy">0</b></span>
+    <span id="zoomInfo"></span>
+    <span id="snapInfo"></span>
+    <span id="hint"></span>
+  </footer>
+
+  <aside>
+    <section id="props"></section>
+    <section>
+      <h2>Réglages</h2>
+      <div class="fields">
+        <label for="snap">Magnétisme</label>
+        <select id="snap">
+          <option value="0">Désactivé</option>
+          <option value="0.1">1 mm</option>
+          <option value="0.5">5 mm</option>
+          <option value="1" selected>1 cm</option>
+          <option value="5">5 cm</option>
+          <option value="10">10 cm</option>
+        </select>
+        <label for="unit">Unité</label>
+        <select id="unit">
+          <option value="cm" selected>centimètres</option>
+          <option value="mm">millimètres</option>
+        </select>
+      </div>
+      <p style="margin:10px 0 0"><label class="check"><input type="checkbox" id="showDims" checked> Afficher les dimensions</label></p>
+    </section>
+    <section class="settings-help">
+      <h2>Raccourcis</h2>
+      <ul class="help">
+        <li><b>Molette</b> zoom · <b>Espace + glisser</b> déplacer</li>
+        <li><b>Maj</b> trait droit (0°, 45°, 90°)</li>
+        <li><b>Flèches</b> décaler la sélection (Maj ×10)</li>
+        <li><b>Suppr</b> effacer · <b>Ctrl+D</b> dupliquer</li>
+        <li><b>Échap</b> annuler le tracé en cours</li>
+        <li>Grille fine : 1 cm · grille forte : 10 cm</li>
+      </ul>
+    </section>
+  </aside>
+</div>
+
+<script>
+(() => {
+"use strict";
+const $ = (s) => document.querySelector(s);
+const cv = $("#cv"), ctx = cv.getContext("2d"), stage = $("#stage");
+
+/* ---------- état ---------- */
+const PX_PER_CM_REAL = 96 / 2.54;
+const COLORS = { bg: "#0b2447", ink: "#e6efff", sel: "#ffd166", dim: "#7fdbff", fill: "rgba(140,185,255,0.07)", fillSel: "rgba(255,209,102,0.10)" };
+const MONO = '"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace';
+const STORE_KEY = "plan-menuiserie-v1";
+
+let W = 0, H = 0, dpr = 1;
+let view = { s: 8, ox: 80, oy: 80 };           // s = pixels par cm
+let shapes = [];
+let nextId = 1;
+let selId = null;
+let tool = "select";
+let settings = { snap: 1, unit: "cm", showDims: true };
+let undoStack = [], redoStack = [];
+let draft = null, drag = null, snapMark = null;
+let spaceDown = false;
+const pointers = new Map();
+let pinch = null;
+
+/* ---------- utilitaires ---------- */
+const toWorld = (sx, sy) => ({ x: (sx - view.ox) / view.s, y: (sy - view.oy) / view.s });
+const toScreen = (x, y, v = view) => [x * v.s + v.ox, y * v.s + v.oy];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const round = (v, step) => Math.round(v / step) * step;
+const clean = (v) => Math.round(v * 1000) / 1000;
+
+function num(v, d) {
+  return (Math.round(v * 10 ** d) / 10 ** d).toLocaleString("fr-FR", { maximumFractionDigits: d });
+}
+function fmt(v) {
+  return settings.unit === "mm" ? num(v * 10, 0) + " mm" : num(v, 1) + " cm";
+}
+const toUnit = (v) => settings.unit === "mm" ? clean(v * 10) : clean(v);
+const fromUnit = (v) => settings.unit === "mm" ? v / 10 : v;
+
+function distSeg(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy;
+  let t = L ? ((px - x1) * dx + (py - y1) * dy) / L : 0;
+  t = clamp(t, 0, 1);
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+function dimGeom(d) {
+  const dx = d.x2 - d.x1, dy = d.y2 - d.y1, L = Math.hypot(dx, dy) || 1;
+  const ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+  return {
+    len: Math.hypot(dx, dy), ux, uy, nx, ny,
+    ax: d.x1 + nx * d.off, ay: d.y1 + ny * d.off,
+    bx: d.x2 + nx * d.off, by: d.y2 + ny * d.off,
+  };
+}
+
+const TYPE_NAMES = { line: "Trait", rect: "Panneau", circle: "Perçage / cercle", dim: "Cote", text: "Texte" };
+
+/* ---------- sauvegarde & historique ---------- */
+const snapshot = () => JSON.stringify(shapes);
+function pushUndo(snap) {
+  undoStack.push(snap);
+  if (undoStack.length > 200) undoStack.shift();
+  redoStack = [];
+  persist();
+  updateButtons();
+}
+function restore(json) {
+  shapes = JSON.parse(json);
+  if (!shapes.some((s) => s.id === selId)) selId = null;
+  nextId = shapes.reduce((m, s) => Math.max(m, s.id), 0) + 1;
+}
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(snapshot());
+  restore(undoStack.pop());
+  persist(); refresh();
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(snapshot());
+  restore(redoStack.pop());
+  persist(); refresh();
+}
+function persist() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ shapes, settings, view })); } catch (e) { /* stockage indisponible */ }
+}
+function addShape(sh) {
+  pushUndo(snapshot());
+  sh.id = nextId++;
+  shapes.push(sh);
+  selId = sh.id;
+  persist();
+}
+const selected = () => shapes.find((s) => s.id === selId) || null;
+
+/* ---------- plan d'exemple ---------- */
+function sample() {
+  const t = 1.8;
+  const list = [
+    { type: "text", x: 0, y: -9, text: "Caisson bas — vue de face", size: 2.4 },
+    { type: "rect", x: 0, y: 0, w: t, h: 80, name: "Côté gauche" },
+    { type: "rect", x: 60 - t, y: 0, w: t, h: 80, name: "Côté droit" },
+    { type: "rect", x: t, y: 0, w: 60 - 2 * t, h: t, name: "Dessus" },
+    { type: "rect", x: t, y: 80 - t, w: 60 - 2 * t, h: t, name: "Dessous" },
+    { type: "rect", x: t, y: 40 - t / 2, w: 60 - 2 * t, h: t, name: "Étagère" },
+    { type: "circle", cx: 5, cy: 30, r: 0.25 }, { type: "circle", cx: 5, cy: 50, r: 0.25 },
+    { type: "circle", cx: 55, cy: 30, r: 0.25 }, { type: "circle", cx: 55, cy: 50, r: 0.25 },
+    { type: "dim", x1: 0, y1: 80, x2: 60, y2: 80, off: 6 },
+    { type: "dim", x1: 0, y1: 0, x2: 0, y2: 80, off: 6 },
+    { type: "dim", x1: t, y1: 40 + t / 2, x2: t, y2: 80 - t, off: -8 },
+  ];
+  shapes = list.map((s, i) => ({ ...s, id: i + 1 }));
+  nextId = shapes.length + 1;
+}
+
+/* ---------- rendu ---------- */
+function resize() {
+  const r = stage.getBoundingClientRect();
+  dpr = window.devicePixelRatio || 1;
+  W = r.width; H = r.height;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  cv.style.width = W + "px"; cv.style.height = H + "px";
+  draw();
+}
+
+function drawGrid(c, v, w, h) {
+  // grille 1 cm, 10 cm et 1 m
+  const levels = [[1, 0.13, 1], [10, 0.30, 1], [100, 0.45, 1.5]];
+  for (const [step, alpha, lw] of levels) {
+    const px = step * v.s;
+    if (px < 4) continue;
+    const a = alpha * Math.min(1, (px - 4) / 8);
+    c.strokeStyle = `rgba(160,200,255,${a})`;
+    c.lineWidth = lw;
+    c.beginPath();
+    const i0 = Math.floor(-v.ox / px), i1 = Math.ceil((w - v.ox) / px);
+    for (let i = i0; i <= i1; i++) { const x = Math.round(v.ox + i * px) + 0.5; c.moveTo(x, 0); c.lineTo(x, h); }
+    const j0 = Math.floor(-v.oy / px), j1 = Math.ceil((h - v.oy) / px);
+    for (let j = j0; j <= j1; j++) { const y = Math.round(v.oy + j * px) + 0.5; c.moveTo(0, y); c.lineTo(w, y); }
+    c.stroke();
+  }
+  // axes de l'origine
+  c.strokeStyle = "rgba(127,219,255,0.35)"; c.lineWidth = 1;
+  c.beginPath();
+  c.moveTo(Math.round(v.ox) + 0.5, 0); c.lineTo(Math.round(v.ox) + 0.5, h);
+  c.moveTo(0, Math.round(v.oy) + 0.5); c.lineTo(w, Math.round(v.oy) + 0.5);
+  c.stroke();
+}
+
+function drawRulers(c, v, w, h) {
+  // graduations chiffrées le long des bords
+  const steps = [1, 5, 10, 20, 50, 100, 200, 500, 1000];
+  const step = steps.find((s) => s * v.s >= 48) || 1000;
+  c.font = `10px ${MONO}`; c.fillStyle = "rgba(200,222,255,0.7)";
+  c.textBaseline = "top"; c.textAlign = "left";
+  const i0 = Math.ceil(-v.ox / v.s / step), i1 = Math.floor((w - v.ox) / v.s / step);
+  for (let i = i0; i <= i1; i++) c.fillText(String(i * step), v.ox + i * step * v.s + 3, 3);
+  const j0 = Math.ceil(-v.oy / v.s / step), j1 = Math.floor((h - v.oy) / v.s / step);
+  for (let j = j0; j <= j1; j++) if (j !== 0) c.fillText(String(j * step), 3, v.oy + j * step * v.s + 3);
+}
+
+function tag(c, text, x, y, angle, color, above = true) {
+  // étiquette lisible avec fond bleu
+  let a = angle;
+  if (a > Math.PI / 2 || a <= -Math.PI / 2) a += Math.PI;
+  c.save();
+  c.translate(x, y); c.rotate(a);
+  c.font = `11px ${MONO}`;
+  const tw = c.measureText(text).width;
+  const yy = above ? -9 : 9;
+  c.fillStyle = COLORS.bg;
+  c.fillRect(-tw / 2 - 3, yy - 7, tw + 6, 14);
+  c.fillStyle = color; c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillText(text, 0, yy);
+  c.restore();
+}
+
+function arrow(c, x, y, ang, size) {
+  c.beginPath();
+  c.moveTo(x, y);
+  c.lineTo(x - Math.cos(ang - 0.35) * size, y - Math.sin(ang - 0.35) * size);
+  c.lineTo(x - Math.cos(ang + 0.35) * size, y - Math.sin(ang + 0.35) * size);
+  c.closePath(); c.fill();
+}
+
+function drawShape(c, v, sh, isSel, isDraft, exporting) {
+  const col = isSel ? COLORS.sel : (sh.type === "dim" ? COLORS.dim : COLORS.ink);
+  c.save();
+  c.strokeStyle = col; c.fillStyle = col;
+  c.lineWidth = isSel ? 2 : 1.5;
+  c.lineCap = "round"; c.lineJoin = "round";
+  if (isDraft) c.setLineDash([6, 4]);
+  const show = settings.showDims || isDraft;
+
+  if (sh.type === "line") {
+    const [x1, y1] = toScreen(sh.x1, sh.y1, v), [x2, y2] = toScreen(sh.x2, sh.y2, v);
+    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+    const L = Math.hypot(sh.x2 - sh.x1, sh.y2 - sh.y1);
+    if (show && L * v.s > 30) tag(c, fmt(L), (x1 + x2) / 2, (y1 + y2) / 2, Math.atan2(y2 - y1, x2 - x1), col);
+  }
+
+  else if (sh.type === "rect") {
+    const [x, y] = toScreen(sh.x, sh.y, v), w = sh.w * v.s, h = sh.h * v.s;
+    c.fillStyle = isSel ? COLORS.fillSel : COLORS.fill;
+    c.fillRect(x, y, w, h);
+    c.strokeRect(x, y, w, h);
+    c.fillStyle = col;
+    const big = Math.min(w, h) > 44;
+    if (show && (big || isSel || isDraft)) {
+      c.font = `11px ${MONO}`; c.textAlign = "center";
+      if (w > 44) { c.textBaseline = "bottom"; c.fillText(fmt(sh.w), x + w / 2, y - 3); }
+      if (h > 44) { c.save(); c.translate(x - 3, y + h / 2); c.rotate(-Math.PI / 2); c.textBaseline = "bottom"; c.fillText(fmt(sh.h), 0, 0); c.restore(); }
+    }
+    // nom (et dimensions pour les panneaux fins) écrit dans la pièce
+    const full = show && !big ? [sh.name, `${num(Math.max(sh.w, sh.h), 1)} × ${num(Math.min(sh.w, sh.h), 1)}`].filter(Boolean).join(" · ") : sh.name;
+    for (const label of [full, sh.name]) {
+      if (!label) continue;
+      c.font = `500 11px "IBM Plex Sans", system-ui, sans-serif`;
+      c.textAlign = "center"; c.textBaseline = "middle";
+      c.globalAlpha = 0.85;
+      const tw = c.measureText(label).width;
+      let done = true;
+      if (tw + 10 < w && h > 12) c.fillText(label, x + w / 2, y + h / 2);
+      else if (tw + 10 < h && w > 12) { c.save(); c.translate(x + w / 2, y + h / 2); c.rotate(-Math.PI / 2); c.fillText(label, 0, 0); c.restore(); }
+      else done = false;
+      c.globalAlpha = 1;
+      if (done) break;
+    }
+  }
+
+  else if (sh.type === "circle") {
+    const [x, y] = toScreen(sh.cx, sh.cy, v), r = Math.max(sh.r * v.s, 1);
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.stroke();
+    const k = Math.max(r + 4, 6);
+    c.lineWidth = 1; c.globalAlpha = 0.6;
+    c.beginPath(); c.moveTo(x - k, y); c.lineTo(x + k, y); c.moveTo(x, y - k); c.lineTo(x, y + k); c.stroke();
+    c.globalAlpha = 1;
+    if (show && (r > 8 || isSel || isDraft)) {
+      c.font = `11px ${MONO}`; c.textAlign = "left"; c.textBaseline = "bottom";
+      c.fillText("Ø " + fmt(sh.r * 2), x + r * 0.72 + 4, y - r * 0.72 - 2);
+    }
+  }
+
+  else if (sh.type === "dim") {
+    const g = dimGeom(sh);
+    const [p1x, p1y] = toScreen(sh.x1, sh.y1, v), [p2x, p2y] = toScreen(sh.x2, sh.y2, v);
+    const [ax, ay] = toScreen(g.ax, g.ay, v), [bx, by] = toScreen(g.bx, g.by, v);
+    const sgn = sh.off >= 0 ? 1 : -1, ext = 6 * sgn, gap = 3 * sgn;
+    c.lineWidth = 1;
+    // lignes d'attache
+    if (Math.abs(sh.off) * v.s > 4) {
+      c.beginPath();
+      c.moveTo(p1x + g.nx * gap, p1y + g.ny * gap); c.lineTo(ax + g.nx * ext, ay + g.ny * ext);
+      c.moveTo(p2x + g.nx * gap, p2y + g.ny * gap); c.lineTo(bx + g.nx * ext, by + g.ny * ext);
+      c.stroke();
+    }
+    c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+    c.setLineDash([]);
+    const ang = Math.atan2(by - ay, bx - ax);
+    const L = Math.hypot(bx - ax, by - ay);
+    const as = Math.min(9, L / 3);
+    arrow(c, bx, by, ang, as); arrow(c, ax, ay, ang + Math.PI, as);
+    // texte du côté extérieur
+    let a = ang; const flipped = a > Math.PI / 2 || a <= -Math.PI / 2;
+    const outside = (sgn > 0) !== flipped;
+    tag(c, fmt(g.len), (ax + bx) / 2, (ay + by) / 2, ang, col, !outside ? true : false);
+  }
+
+  else if (sh.type === "text") {
+    const [x, y] = toScreen(sh.x, sh.y, v);
+    const px = Math.max(sh.size * v.s, 6);
+    c.font = `500 ${px}px "IBM Plex Sans", system-ui, sans-serif`;
+    c.textAlign = "left"; c.textBaseline = "top";
+    c.fillText(sh.text, x, y);
+    if (isSel && !exporting) {
+      const tw = c.measureText(sh.text).width;
+      c.setLineDash([3, 3]); c.lineWidth = 1;
+      c.strokeRect(x - 3, y - 3, tw + 6, px * 1.2 + 6);
+    }
+  }
+  c.restore();
+}
+
+function render(c, v, w, h, exporting) {
+  c.fillStyle = COLORS.bg; c.fillRect(0, 0, w, h);
+  drawGrid(c, v, w, h);
+  for (const sh of shapes) drawShape(c, v, sh, !exporting && sh.id === selId, false, exporting);
+  if (exporting) return;
+  drawRulers(c, v, w, h);
+  if (draft) drawShape(c, v, draft, false, true);
+  const s = selected();
+  if (s) {
+    c.fillStyle = COLORS.bg; c.strokeStyle = COLORS.sel; c.lineWidth = 1.5;
+    for (const hd of handlesOf(s)) {
+      const [x, y] = toScreen(hd.x, hd.y, v);
+      c.fillRect(x - 4.5, y - 4.5, 9, 9); c.strokeRect(x - 4.5, y - 4.5, 9, 9);
+    }
+  }
+  if (snapMark) {
+    const [x, y] = toScreen(snapMark.x, snapMark.y, v);
+    c.strokeStyle = snapMark.kind === "point" ? COLORS.sel : "rgba(255,209,102,0.55)";
+    c.lineWidth = 1.5;
+    c.beginPath();
+    if (snapMark.kind === "point") c.rect(x - 6, y - 6, 12, 12);
+    else { c.moveTo(x - 6, y); c.lineTo(x + 6, y); c.moveTo(x, y - 6); c.lineTo(x, y + 6); }
+    c.stroke();
+  }
+}
+
+let rafPending = false;
+function draw() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    render(ctx, view, W, H, false);
+    $("#zoomInfo").innerHTML = `1 cm = <b>${num(view.s, 1)} px</b>`;
+  });
+}
+
+/* ---------- sélection & poignées ---------- */
+function handlesOf(sh) {
+  switch (sh.type) {
+    case "line": return [{ k: "p1", x: sh.x1, y: sh.y1 }, { k: "p2", x: sh.x2, y: sh.y2 }];
+    case "dim": {
+      const g = dimGeom(sh);
+      return [{ k: "p1", x: sh.x1, y: sh.y1 }, { k: "p2", x: sh.x2, y: sh.y2 }, { k: "off", x: (g.ax + g.bx) / 2, y: (g.ay + g.by) / 2 }];
+    }
+    case "rect": return [
+      { k: "nw", x: sh.x, y: sh.y }, { k: "ne", x: sh.x + sh.w, y: sh.y },
+      { k: "se", x: sh.x + sh.w, y: sh.y + sh.h }, { k: "sw", x: sh.x, y: sh.y + sh.h }];
+    case "circle": return [{ k: "r", x: sh.cx + sh.r, y: sh.cy }];
+    default: return [];
+  }
+}
+
+function keyPoints(sh) {
+  switch (sh.type) {
+    case "line": return [[sh.x1, sh.y1], [sh.x2, sh.y2], [(sh.x1 + sh.x2) / 2, (sh.y1 + sh.y2) / 2]];
+    case "dim": return [[sh.x1, sh.y1], [sh.x2, sh.y2]];
+    case "rect": return [[sh.x, sh.y], [sh.x + sh.w, sh.y], [sh.x + sh.w, sh.y + sh.h], [sh.x, sh.y + sh.h],
+      [sh.x + sh.w / 2, sh.y], [sh.x + sh.w / 2, sh.y + sh.h], [sh.x, sh.y + sh.h / 2], [sh.x + sh.w, sh.y + sh.h / 2]];
+    case "circle": return [[sh.cx, sh.cy]];
+    default: return [];
+  }
+}
+
+function textWidth(sh) {
+  ctx.save();
+  ctx.font = `500 ${sh.size}px "IBM Plex Sans", system-ui, sans-serif`;
+  const w = ctx.measureText(sh.text).width;
+  ctx.restore();
+  return w;
+}
+
+function hitTest(x, y, tol) {
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      const sh = shapes[i];
+      if (pass === 0) {
+        if (sh.type === "line" && distSeg(x, y, sh.x1, sh.y1, sh.x2, sh.y2) < tol) return sh;
+        if (sh.type === "circle" && Math.hypot(x - sh.cx, y - sh.cy) < sh.r + tol) return sh;
+        if (sh.type === "dim") { const g = dimGeom(sh); if (distSeg(x, y, g.ax, g.ay, g.bx, g.by) < tol * 1.5) return sh; }
+        if (sh.type === "text" && x >= sh.x - tol && x <= sh.x + textWidth(sh) + tol && y >= sh.y - tol && y <= sh.y + sh.size * 1.2 + tol) return sh;
+        if (sh.type === "rect") {
+          const { x: rx, y: ry, w, h } = sh;
+          const onEdge = distSeg(x, y, rx, ry, rx + w, ry) < tol || distSeg(x, y, rx + w, ry, rx + w, ry + h) < tol ||
+            distSeg(x, y, rx + w, ry + h, rx, ry + h) < tol || distSeg(x, y, rx, ry + h, rx, ry) < tol;
+          if (onEdge) return sh;
+        }
+      } else if (sh.type === "rect" && x >= sh.x && x <= sh.x + sh.w && y >= sh.y && y <= sh.y + sh.h) return sh;
+    }
+  }
+  return null;
+}
+
+function snapPoint(x, y, excludeId, noPoints) {
+  if (!noPoints) {
+    let best = null, bd = 10 / view.s;
+    for (const sh of shapes) {
+      if (sh.id === excludeId) continue;
+      for (const [px, py] of keyPoints(sh)) {
+        const d = Math.hypot(px - x, py - y);
+        if (d < bd) { bd = d; best = { x: px, y: py, kind: "point" }; }
+      }
+    }
+    if (best) return best;
+  }
+  if (settings.snap > 0) return { x: clean(round(x, settings.snap)), y: clean(round(y, settings.snap)), kind: "grid" };
+  return { x, y, kind: null };
+}
+
+function constrain(x0, y0, p) {
+  // Maj : angles multiples de 45°
+  const dx = p.x - x0, dy = p.y - y0;
+  const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  let L = Math.hypot(dx, dy);
+  if (settings.snap > 0) L = round(L, settings.snap);
+  return { x: clean(x0 + Math.cos(a) * L), y: clean(y0 + Math.sin(a) * L), kind: "grid" };
+}
+
+/* ---------- pointeur ---------- */
+function localPos(e) {
+  const r = cv.getBoundingClientRect();
+  return { sx: e.clientX - r.left, sy: e.clientY - r.top };
+}
+
+function zoomAt(sx, sy, factor) {
+  const s2 = clamp(view.s * factor, 0.4, 600);
+  const f = s2 / view.s;
+  view.ox = sx - (sx - view.ox) * f;
+  view.oy = sy - (sy - view.oy) * f;
+  view.s = s2;
+  persist(); draw();
+}
+
+function finishDraft() {
+  const d = draft; draft = null; snapMark = null;
+  if (!d) return;
+  if (d.type === "line" && Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 0) addShape(d);
+  else if (d.type === "rect") {
+    if (d.w > 0 && d.h > 0) { delete d.x0; delete d.y0; addShape(d); }
+  }
+  else if (d.type === "circle" && d.r > 0) addShape(d);
+  else if (d.type === "dim" && Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 0) { delete d.stage; addShape(d); }
+  refresh();
+}
+
+cv.addEventListener("pointerdown", (e) => {
+  const { sx, sy } = localPos(e);
+  pointers.set(e.pointerId, { sx, sy });
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+
+  if (pointers.size === 2) {
+    // pincer pour zoomer : on abandonne l'action en cours
+    if (drag && drag.before && drag.changed) restore(drag.before);
+    draft = null; drag = null; snapMark = null;
+    const [a, b] = [...pointers.values()];
+    pinch = { d: Math.hypot(a.sx - b.sx, a.sy - b.sy), cx: (a.sx + b.sx) / 2, cy: (a.sy + b.sy) / 2 };
+    refresh();
+    return;
+  }
+  if (pointers.size > 2) return;
+
+  const w = toWorld(sx, sy);
+  const touch = e.pointerType !== "mouse";
+  const tol = (touch ? 14 : 7) / view.s;
+
+  if (e.button === 1 || e.button === 2 || spaceDown || tool === "pan") {
+    drag = { mode: "pan", sx, sy, ox: view.ox, oy: view.oy };
+    cv.classList.add("panning");
+    return;
+  }
+  if (e.button !== 0) return;
+
+  // cote : 2e clic pour fixer le décalage
+  if (draft && draft.type === "dim" && draft.stage === 2) { finishDraft(); return; }
+
+  if (tool === "select") {
+    const s = selected();
+    if (s) {
+      for (const hd of handlesOf(s)) {
+        const [hx, hy] = toScreen(hd.x, hd.y);
+        if (Math.hypot(hx - sx, hy - sy) < (touch ? 16 : 8)) {
+          const d = { mode: "handle", k: hd.k, before: snapshot(), changed: false };
+          if (s.type === "rect") {
+            const opp = { nw: [s.x + s.w, s.y + s.h], ne: [s.x, s.y + s.h], se: [s.x, s.y], sw: [s.x + s.w, s.y] }[hd.k];
+            d.ax = opp[0]; d.ay = opp[1];
+          }
+          drag = d;
+          return;
+        }
+      }
+    }
+    const hit = hitTest(w.x, w.y, tol);
+    if (hit) {
+      selId = hit.id;
+      drag = { mode: "move", start: w, orig: JSON.parse(JSON.stringify(hit)), before: snapshot(), changed: false };
+    } else {
+      selId = null;
+      drag = { mode: "pan", sx, sy, ox: view.ox, oy: view.oy };
+      cv.classList.add("panning");
+    }
+    refresh();
+    return;
+  }
+
+  const p = snapPoint(w.x, w.y);
+  if (tool === "text") {
+    addShape({ type: "text", x: p.x, y: p.y, text: "Texte", size: 2 });
+    setTool("select");
+    refresh();
+    const input = document.getElementById("f-text");
+    if (input) { input.focus(); input.select(); }
+    return;
+  }
+  if (tool === "line") draft = { type: "line", x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+  if (tool === "rect") draft = { type: "rect", x0: p.x, y0: p.y, x: p.x, y: p.y, w: 0, h: 0, name: "" };
+  if (tool === "circle") draft = { type: "circle", cx: p.x, cy: p.y, r: 0 };
+  if (tool === "dim") draft = { type: "dim", x1: p.x, y1: p.y, x2: p.x, y2: p.y, off: 0, stage: 1 };
+  drag = { mode: "draw" };
+  draw();
+});
+
+cv.addEventListener("pointermove", (e) => {
+  const { sx, sy } = localPos(e);
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { sx, sy });
+
+  if (pinch && pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.sx - b.sx, a.sy - b.sy);
+    const cx = (a.sx + b.sx) / 2, cy = (a.sy + b.sy) / 2;
+    view.ox += cx - pinch.cx; view.oy += cy - pinch.cy;
+    zoomAt(cx, cy, d / pinch.d);
+    pinch = { d, cx, cy };
+    return;
+  }
+
+  const w = toWorld(sx, sy);
+  $("#cx").textContent = fmt(w.x);
+  $("#cy").textContent = fmt(w.y);
+
+  if (drag && drag.mode === "pan") {
+    view.ox = drag.ox + (sx - drag.sx);
+    view.oy = drag.oy + (sy - drag.sy);
+    draw();
+    return;
+  }
+
+  if (drag && drag.mode === "move") {
+    const s = selected(); if (!s) return;
+    let dx = w.x - drag.start.x, dy = w.y - drag.start.y;
+    if (settings.snap > 0) { dx = round(dx, settings.snap); dy = round(dy, settings.snap); }
+    if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+    const o = drag.orig;
+    const mv = (k, d) => { if (k in o) s[k] = clean(o[k] + d); };
+    ["x", "x1", "x2", "cx"].forEach((k) => mv(k, dx));
+    ["y", "y1", "y2", "cy"].forEach((k) => mv(k, dy));
+    drag.changed = drag.changed || dx !== 0 || dy !== 0;
+    draw();
+    return;
+  }
+
+  if (drag && drag.mode === "handle") {
+    const s = selected(); if (!s) return;
+    let p = snapPoint(w.x, w.y, s.id);
+    if (drag.k === "p1" || drag.k === "p2") {
+      if (e.shiftKey) p = drag.k === "p1" ? constrain(s.x2, s.y2, w) : constrain(s.x1, s.y1, w);
+      s[drag.k === "p1" ? "x1" : "x2"] = p.x;
+      s[drag.k === "p1" ? "y1" : "y2"] = p.y;
+    } else if (drag.k === "off") {
+      const g = dimGeom(s);
+      let off = (w.x - s.x1) * g.nx + (w.y - s.y1) * g.ny;
+      if (settings.snap > 0) off = round(off, Math.min(settings.snap, 1));
+      s.off = clean(off);
+      p = null;
+    } else if (drag.k === "r") {
+      let r = Math.hypot(w.x - s.cx, w.y - s.cy);
+      if (settings.snap > 0) r = Math.max(settings.snap / 2, round(r, settings.snap / 2));
+      s.r = clean(r);
+      p = null;
+    } else if (s.type === "rect") {
+      s.x = Math.min(drag.ax, p.x); s.y = Math.min(drag.ay, p.y);
+      s.w = clean(Math.abs(p.x - drag.ax)); s.h = clean(Math.abs(p.y - drag.ay));
+    }
+    snapMark = p && p.kind ? p : null;
+    drag.changed = true;
+    draw(); updatePanelValues();
+    return;
+  }
+
+  // tracé en cours / survol
+  if (tool !== "select" && tool !== "pan") {
+    let p = snapPoint(w.x, w.y);
+    if (draft) {
+      if (draft.type === "line" || (draft.type === "dim" && draft.stage === 1)) {
+        if (e.shiftKey || draft.type === "dim") {
+          // une cote est horizontale/verticale par défaut sauf Maj
+          if (draft.type === "line" || !e.shiftKey) p = p.kind === "point" ? p : constrain(draft.x1, draft.y1, p);
+        }
+        draft.x2 = p.x; draft.y2 = p.y;
+      } else if (draft.type === "dim" && draft.stage === 2) {
+        const g = dimGeom(draft);
+        let off = (w.x - draft.x1) * g.nx + (w.y - draft.y1) * g.ny;
+        if (settings.snap > 0) off = round(off, Math.min(settings.snap, 1));
+        draft.off = clean(off);
+        p = null;
+      } else if (draft.type === "rect") {
+        draft.x = Math.min(draft.x0, p.x); draft.y = Math.min(draft.y0, p.y);
+        draft.w = clean(Math.abs(p.x - draft.x0)); draft.h = clean(Math.abs(p.y - draft.y0));
+      } else if (draft.type === "circle") {
+        let r = Math.hypot(w.x - draft.cx, w.y - draft.cy);
+        if (settings.snap > 0) r = round(r, settings.snap / 2);
+        draft.r = clean(r);
+        p = null;
+      }
+    }
+    snapMark = p && p.kind ? p : null;
+    draw();
+  }
+});
+
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pinch) { if (pointers.size < 2) pinch = null; persist(); return; }
+  cv.classList.remove("panning");
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.mode === "pan") { persist(); return; }
+  if (d.mode === "move" || d.mode === "handle") {
+    snapMark = null;
+    if (d.changed) pushUndo(d.before);
+    refresh();
+    return;
+  }
+  if (d.mode === "draw" && draft) {
+    if (draft.type === "dim" && draft.stage === 1) {
+      if (Math.hypot(draft.x2 - draft.x1, draft.y2 - draft.y1) === 0) { draft = null; draw(); return; }
+      if (e.pointerType === "mouse") { draft.stage = 2; setHint(); return; }
+      // au doigt : décalage par défaut, réglable ensuite avec la poignée
+      draft.off = draft.y1 === draft.y2 ? -4 : 4;
+    }
+    finishDraft();
+  }
+}
+cv.addEventListener("pointerup", endPointer);
+cv.addEventListener("pointercancel", endPointer);
+cv.addEventListener("pointerleave", () => { if (!drag && !draft) { snapMark = null; draw(); } });
+cv.addEventListener("contextmenu", (e) => e.preventDefault());
+cv.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const { sx, sy } = localPos(e);
+  if (e.ctrlKey || !e.shiftKey && Math.abs(e.deltaX) < 1) zoomAt(sx, sy, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
+  else { view.ox -= e.deltaX; view.oy -= e.deltaY; draw(); }
+}, { passive: false });
+
+/* ---------- outils ---------- */
+const HINTS = {
+  select: "Cliquez un élément pour le sélectionner, glissez pour le déplacer. Glisser dans le vide déplace la vue.",
+  pan: "Glissez pour déplacer la vue.",
+  line: "Cliquez-glissez pour tracer un trait. Maj : 0°/45°/90°.",
+  rect: "Cliquez-glissez pour dessiner un panneau.",
+  circle: "Cliquez au centre puis glissez pour le rayon.",
+  dim: "Glissez d'un point à l'autre, puis placez la ligne de cote et cliquez.",
+  text: "Cliquez pour poser un texte.",
+};
+function setHint() {
+  const h = draft && draft.type === "dim" && draft.stage === 2 ? "Déplacez la souris pour placer la cote, puis cliquez." : HINTS[tool];
+  $("#hint").textContent = h;
+}
+function setTool(t) {
+  tool = t;
+  draft = null; snapMark = null;
+  document.querySelectorAll("[data-tool]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tool === t)));
+  cv.className = t === "select" ? "select" : t === "pan" ? "pan" : "";
+  setHint(); draw();
+}
+document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => setTool(b.dataset.tool)));
+
+/* ---------- panneau de propriétés ---------- */
+function fieldsFor(sh) {
+  const len = (label, key, min) => ({ label, len: true, get: () => sh[key], set: (v) => { sh[key] = min != null ? Math.max(min, v) : v; } });
+  switch (sh.type) {
+    case "rect": return [
+      { label: "Nom", text: true, id: "f-name", get: () => sh.name || "", set: (v) => { sh.name = v; } },
+      len("X", "x"), len("Y", "y"), len("Largeur", "w", 0.1), len("Hauteur", "h", 0.1),
+      { label: "Surface", ro: true, get: () => num(sh.w * sh.h / 10000, 3) + " m²" },
+    ];
+    case "line": {
+      const L = () => Math.hypot(sh.x2 - sh.x1, sh.y2 - sh.y1);
+      const A = () => Math.atan2(-(sh.y2 - sh.y1), sh.x2 - sh.x1) * 180 / Math.PI;
+      return [
+        len("X1", "x1"), len("Y1", "y1"), len("X2", "x2"), len("Y2", "y2"),
+        { label: "Longueur", len: true, get: L, set: (v) => {
+          const a = Math.atan2(sh.y2 - sh.y1, sh.x2 - sh.x1);
+          sh.x2 = clean(sh.x1 + Math.cos(a) * Math.max(0.1, v)); sh.y2 = clean(sh.y1 + Math.sin(a) * Math.max(0.1, v)); } },
+        { label: "Angle", unit: "°", get: () => clean(A()), set: (v) => {
+          const l = L(), a = -v * Math.PI / 180;
+          sh.x2 = clean(sh.x1 + Math.cos(a) * l); sh.y2 = clean(sh.y1 + Math.sin(a) * l); } },
+      ];
+    }
+    case "circle": return [
+      len("Centre X", "cx"), len("Centre Y", "cy"),
+      { label: "Diamètre", len: true, get: () => sh.r * 2, set: (v) => { sh.r = Math.max(0.05, v / 2); } },
+    ];
+    case "dim": return [
+      len("X1", "x1"), len("Y1", "y1"), len("X2", "x2"), len("Y2", "y2"), len("Décalage", "off"),
+      { label: "Mesure", ro: true, get: () => fmt(dimGeom(sh).len) },
+    ];
+    case "text": return [
+      { label: "Texte", text: true, id: "f-text", get: () => sh.text, set: (v) => { sh.text = v || "Texte"; } },
+      len("X", "x"), len("Y", "y"), len("Taille", "size", 0.2),
+    ];
+  }
+  return [];
+}
+
+let panelFields = [];
+function buildPanel() {
+  const box = $("#props");
+  const s = selected();
+  box.innerHTML = "";
+  panelFields = [];
+  if (!s) {
+    box.innerHTML = `<h2>Sélection</h2><p class="empty">Aucun élément sélectionné. Choisissez un outil en haut pour dessiner, ou l'outil Sélection pour modifier une pièce et saisir ses cotes exactes.</p>`;
+    return;
+  }
+  const h2 = document.createElement("h2"); h2.textContent = "Sélection";
+  const h3 = document.createElement("h3"); h3.textContent = TYPE_NAMES[s.type];
+  const grid = document.createElement("div"); grid.className = "fields";
+  fieldsFor(s).forEach((f, i) => {
+    const id = f.id || `f-${s.type}-${i}`;
+    const lab = document.createElement("label"); lab.textContent = f.label; lab.htmlFor = id;
+    let control, input;
+    if (f.ro) {
+      input = document.createElement("input"); input.readOnly = true; input.id = id; input.tabIndex = -1;
+      control = input;
+    } else if (f.text) {
+      input = document.createElement("input"); input.type = "text"; input.id = id;
+      control = input;
+    } else {
+      control = document.createElement("div"); control.className = "unit-input";
+      input = document.createElement("input"); input.type = "number"; input.id = id;
+      input.step = f.len ? (settings.unit === "mm" ? "1" : "0.1") : "1";
+      const u = document.createElement("span"); u.textContent = f.len ? settings.unit : (f.unit || "");
+      control.append(input, u);
+    }
+    const field = { f, input };
+    panelFields.push(field);
+    if (!f.ro) {
+      input.addEventListener("change", () => {
+        let v = f.text ? input.value : parseFloat(String(input.value).replace(",", "."));
+        if (!f.text && !isFinite(v)) { updatePanelValues(); return; }
+        if (f.len) v = fromUnit(v);
+        pushUndo(snapshot());
+        f.set(f.text ? v : clean(v));
+        persist(); draw(); updatePanelValues();
+      });
+      if (f.text) input.addEventListener("input", () => { f.set(input.value); draw(); });
+    }
+    grid.append(lab, control);
+  });
+  const row = document.createElement("div"); row.className = "row"; row.style.marginTop = "12px";
+  const mk = (txt, fn, cls) => { const b = document.createElement("button"); b.textContent = txt; b.onclick = fn; if (cls) b.className = cls; return b; };
+  row.append(mk("Dupliquer", duplicate), mk("Arrière-plan", toBack), mk("Supprimer", remove, "danger"));
+  box.append(h2, h3, grid, row);
+  updatePanelValues();
+}
+function updatePanelValues() {
+  for (const { f, input } of panelFields) {
+    if (document.activeElement === input) continue;
+    const v = f.get();
+    input.value = f.ro || f.text ? v : (f.len ? toUnit(v) : v);
+  }
+}
+let panelFor = null;
+function refresh() {
+  const s = selected();
+  if ((s ? s.id : null) !== panelFor) { panelFor = s ? s.id : null; buildPanel(); }
+  else updatePanelValues();
+  updateButtons(); setHint(); draw();
+}
+function updateButtons() {
+  $("#undo").disabled = !undoStack.length;
+  $("#redo").disabled = !redoStack.length;
+}
+
+function remove() {
+  if (!selected()) return;
+  pushUndo(snapshot());
+  shapes = shapes.filter((s) => s.id !== selId);
+  selId = null; persist(); refresh();
+}
+function duplicate() {
+  const s = selected(); if (!s) return;
+  const c = JSON.parse(JSON.stringify(s));
+  const d = settings.snap > 0 ? Math.max(settings.snap, 1) * 2 : 2;
+  ["x", "x1", "x2", "cx"].forEach((k) => { if (k in c) c[k] += d; });
+  ["y", "y1", "y2", "cy"].forEach((k) => { if (k in c) c[k] += d; });
+  addShape(c); refresh();
+}
+function toBack() {
+  const s = selected(); if (!s) return;
+  pushUndo(snapshot());
+  shapes = [s, ...shapes.filter((x) => x !== s)];
+  persist(); draw();
+}
+
+/* ---------- vue ---------- */
+function bounds() {
+  if (!shapes.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const add = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+  for (const s of shapes) {
+    if (s.type === "rect") { add(s.x, s.y); add(s.x + s.w, s.y + s.h); }
+    else if (s.type === "line") { add(s.x1, s.y1); add(s.x2, s.y2); }
+    else if (s.type === "circle") { add(s.cx - s.r, s.cy - s.r); add(s.cx + s.r, s.cy + s.r); }
+    else if (s.type === "dim") { const g = dimGeom(s); add(s.x1, s.y1); add(s.x2, s.y2); add(g.ax, g.ay); add(g.bx, g.by); }
+    else if (s.type === "text") { add(s.x, s.y); add(s.x + textWidth(s), s.y + s.size * 1.2); }
+  }
+  return { x0, y0, x1, y1 };
+}
+function fit() {
+  const b = bounds();
+  if (!b) { view = { s: 8, ox: 60, oy: 60 }; draw(); return; }
+  const m = 60;
+  const bw = Math.max(b.x1 - b.x0, 1), bh = Math.max(b.y1 - b.y0, 1);
+  view.s = clamp(Math.min((W - 2 * m) / bw, (H - 2 * m) / bh), 0.4, 600);
+  view.ox = (W - bw * view.s) / 2 - b.x0 * view.s;
+  view.oy = (H - bh * view.s) / 2 - b.y0 * view.s;
+  persist(); draw();
+}
+$("#fit").onclick = fit;
+$("#real").onclick = () => zoomAt(W / 2, H / 2, PX_PER_CM_REAL / view.s);
+$("#zoomIn").onclick = () => zoomAt(W / 2, H / 2, 1.25);
+$("#zoomOut").onclick = () => zoomAt(W / 2, H / 2, 0.8);
+$("#undo").onclick = undo;
+$("#redo").onclick = redo;
+
+/* ---------- fichiers ---------- */
+function download(name, href) {
+  const a = document.createElement("a");
+  a.href = href; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+$("#new").onclick = () => {
+  if (shapes.length) pushUndo(snapshot());
+  shapes = []; selId = null; nextId = 1;
+  persist(); refresh(); fit();
+  $("#hint").textContent = "Nouveau plan. Ctrl+Z pour récupérer l'ancien.";
+};
+$("#save").onclick = () => {
+  const blob = new Blob([JSON.stringify({ app: "plan-menuiserie", version: 1, shapes }, null, 1)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  download("plan-menuiserie.json", url);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+};
+$("#open").onclick = () => $("#file").click();
+$("#file").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    const list = Array.isArray(data) ? data : data.shapes;
+    if (!Array.isArray(list)) throw new Error("format");
+    pushUndo(snapshot());
+    shapes = list; selId = null;
+    nextId = shapes.reduce((m, s) => Math.max(m, s.id || 0), 0) + 1;
+    shapes.forEach((s) => { if (!s.id) s.id = nextId++; });
+    persist(); refresh(); fit();
+  } catch (err) {
+    $("#hint").textContent = "Fichier illisible : choisissez un plan enregistré avec ce logiciel (.json).";
+  }
+};
+$("#png").onclick = () => {
+  const b = bounds() || { x0: 0, y0: 0, x1: 100, y1: 60 };
+  const margin = 6;
+  let s = 20;
+  const bw = b.x1 - b.x0 + 2 * margin, bh = b.y1 - b.y0 + 2 * margin;
+  s = Math.min(s, 6000 / bw, 6000 / bh);
+  const w = Math.ceil(bw * s), h = Math.ceil(bh * s);
+  const off = document.createElement("canvas");
+  off.width = w * 2; off.height = h * 2;
+  const c = off.getContext("2d");
+  c.setTransform(2, 0, 0, 2, 0, 0);
+  const v = { s, ox: (margin - b.x0) * s, oy: (margin - b.y0) * s };
+  render(c, v, w, h, true);
+  download("plan-menuiserie.png", off.toDataURL("image/png"));
+};
+
+/* ---------- réglages ---------- */
+$("#snap").onchange = (e) => { settings.snap = parseFloat(e.target.value); updateSnapInfo(); persist(); };
+$("#unit").onchange = (e) => { settings.unit = e.target.value; persist(); panelFor = undefined; refresh(); };
+$("#showDims").onchange = (e) => { settings.showDims = e.target.checked; persist(); draw(); };
+function updateSnapInfo() {
+  $("#snapInfo").innerHTML = settings.snap > 0 ? `Magnétisme <b>${fmt(settings.snap)}</b>` : "Magnétisme <b>désactivé</b>";
+}
+
+/* ---------- clavier ---------- */
+window.addEventListener("keydown", (e) => {
+  const inField = /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName);
+  if (inField) { if (e.key === "Escape") document.activeElement.blur(); return; }
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
+  if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); duplicate(); return; }
+  if (mod) return;
+  if (e.code === "Space") { if (!spaceDown) { spaceDown = true; cv.classList.add("pan"); } e.preventDefault(); return; }
+  const map = { v: "select", h: "pan", l: "line", r: "rect", c: "circle", d: "dim", t: "text" };
+  const k = e.key.toLowerCase();
+  if (map[k]) { setTool(map[k]); return; }
+  if (e.key === "Escape") { if (draft) { draft = null; snapMark = null; } else { selId = null; } drag = null; refresh(); return; }
+  if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); remove(); return; }
+  if (e.key === "+" || e.key === "=") { zoomAt(W / 2, H / 2, 1.25); return; }
+  if (e.key === "-") { zoomAt(W / 2, H / 2, 0.8); return; }
+  if (e.key === "0") { fit(); return; }
+  const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  if (arrows[e.key] && selected()) {
+    e.preventDefault();
+    const s = selected();
+    const step = (settings.snap > 0 ? settings.snap : 0.1) * (e.shiftKey ? 10 : 1);
+    const [dx, dy] = arrows[e.key];
+    pushUndo(snapshot());
+    ["x", "x1", "x2", "cx"].forEach((k) => { if (k in s) s[k] = clean(s[k] + dx * step); });
+    ["y", "y1", "y2", "cy"].forEach((k) => { if (k in s) s[k] = clean(s[k] + dy * step); });
+    persist(); refresh();
+  }
+});
+window.addEventListener("keyup", (e) => {
+  if (e.code === "Space") { spaceDown = false; cv.classList.toggle("pan", tool === "pan"); }
+});
+
+/* ---------- démarrage ---------- */
+let restored = false;
+try {
+  const raw = localStorage.getItem(STORE_KEY);
+  if (raw) {
+    const data = JSON.parse(raw);
+    if (Array.isArray(data.shapes)) {
+      shapes = data.shapes;
+      nextId = shapes.reduce((m, s) => Math.max(m, s.id), 0) + 1;
+      Object.assign(settings, data.settings || {});
+      if (data.view && data.view.s) view = data.view;
+      restored = true;
+    }
+  }
+} catch (e) { /* stockage indisponible */ }
+if (!restored) sample();
+
+$("#snap").value = String(settings.snap);
+$("#unit").value = settings.unit;
+$("#showDims").checked = settings.showDims;
+updateSnapInfo();
+new ResizeObserver(resize).observe(stage);
+resize();
+if (!restored) fit();
+setTool("select");
+refresh();
+buildPanel();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+})();
+</script>
+</body>
+</html>
