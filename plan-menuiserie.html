@@ -105,6 +105,53 @@ footer {
 footer b { color: var(--ink); font-weight: 500; }
 #hint { overflow: hidden; text-overflow: ellipsis; }
 #file { display: none; }
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+input { -webkit-user-select: text; user-select: text; }
+button, select, input { touch-action: manipulation; }
+
+/* fenêtre de saisie rapide (double appui sur un élément) */
+#editor {
+  touch-action: auto;
+  position: absolute; z-index: 5; width: 250px; max-width: calc(100% - 16px);
+  background: var(--chrome); border: 1px solid var(--pencil); border-radius: 10px;
+  padding: 12px; display: grid; gap: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+}
+#editor[hidden] { display: none; }
+#editor .ed-title { font: 600 11px var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim); }
+#editor .ed-field { display: grid; gap: 4px; }
+#editor .ed-field label { font-size: 13px; color: var(--ink-dim); }
+#editor .unit-input input { font-size: 20px; padding: 10px 12px; }
+#editor .ed-actions { display: flex; gap: 8px; justify-content: flex-end; }
+#editor .ed-actions button { background: var(--chrome-2); border: 1px solid var(--rule); padding: 10px 16px; }
+#editor .ed-actions button.primary { background: var(--pencil); color: #10223f; border-color: var(--pencil); font-weight: 600; }
+
+/* iPad et écrans tactiles : cibles plus grandes */
+@media (pointer: coarse) {
+  header { gap: 8px; padding-block: 10px; }
+  .group { padding: 3px; gap: 3px; border-radius: 12px; }
+  button, .btn { min-height: 48px; min-width: 48px; padding: 10px 14px; border-radius: 10px; justify-content: center; font-size: 15px; }
+  button svg { width: 24px; height: 24px; }
+  .lbl { font-size: 14px; }
+  .app { grid-template-columns: minmax(0, 1fr) 320px; }
+  aside { padding: 18px; gap: 22px; }
+  aside h3 { font-size: 17px; }
+  .fields { gap: 10px 12px; }
+  .fields label { font-size: 15px; }
+  input, select { font-size: 17px; padding: 11px 12px; min-height: 48px; border-radius: 10px; }
+  .unit-input { border-radius: 10px; }
+  .unit-input span { font-size: 15px; padding-right: 12px; }
+  input[type="checkbox"] { width: 26px; height: 26px; min-height: 0; }
+  .check { font-size: 15px; min-height: 44px; }
+  .row { gap: 8px; }
+  .row button { flex: 1 1 auto; }
+  footer { font-size: 13px; padding-block: 8px; }
+  #editor { width: 290px; }
+  aside .settings-help { display: none; }
+  #editor .ed-actions button { min-height: 52px; flex: 1; }
+}
+@media (pointer: coarse) and (max-width: 1200px) {
+  .lbl, kbd, .brand small { display: none; }
+}
 
 @media (max-width: 760px) {
   .app {
@@ -155,7 +202,17 @@ footer b { color: var(--ink); font-weight: 500; }
     <input type="file" id="file" accept=".json,application/json">
   </header>
 
-  <div id="stage"><canvas id="cv"></canvas></div>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <form id="editor" hidden autocomplete="off">
+      <div class="ed-title" id="edTitle">Mesure</div>
+      <div id="edFields"></div>
+      <div class="ed-actions">
+        <button type="button" id="edCancel">Annuler</button>
+        <button type="submit" class="primary">OK</button>
+      </div>
+    </form>
+  </div>
 
   <footer>
     <span>X <b id="cx">0</b></span>
@@ -209,6 +266,7 @@ const cv = $("#cv"), ctx = cv.getContext("2d"), stage = $("#stage");
 
 /* ---------- état ---------- */
 const PX_PER_CM_REAL = 96 / 2.54;
+const COARSE = window.matchMedia && matchMedia("(pointer: coarse)").matches;
 const COLORS = { bg: "#0b2447", ink: "#e6efff", sel: "#ffd166", dim: "#7fdbff", fill: "rgba(140,185,255,0.07)", fillSel: "rgba(255,209,102,0.10)" };
 const MONO = '"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace';
 const STORE_KEY = "plan-menuiserie-v1";
@@ -499,7 +557,8 @@ function render(c, v, w, h, exporting) {
     c.fillStyle = COLORS.bg; c.strokeStyle = COLORS.sel; c.lineWidth = 1.5;
     for (const hd of handlesOf(s)) {
       const [x, y] = toScreen(hd.x, hd.y, v);
-      c.fillRect(x - 4.5, y - 4.5, 9, 9); c.strokeRect(x - 4.5, y - 4.5, 9, 9);
+      const r = COARSE ? 7.5 : 4.5;
+      c.fillRect(x - r, y - r, 2 * r, 2 * r); c.strokeRect(x - r, y - r, 2 * r, 2 * r);
     }
   }
   if (snapMark) {
@@ -633,12 +692,27 @@ function finishDraft() {
   refresh();
 }
 
+/* Apple Pencil : le stylet dessine, les doigts déplacent / zooment,
+   et la paume posée pendant que le stylet écrit est ignorée. */
+let penUsed = false, penDown = false;
+let tapStart = null, lastTap = null;
+
 cv.addEventListener("pointerdown", (e) => {
+  if (!$("#editor").hidden) closeEditor();
+  if (e.pointerType === "touch" && penDown) return;            // paume
+  if (e.pointerType === "pen") { penUsed = true; penDown = true; }
   const { sx, sy } = localPos(e);
+  tapStart = { id: e.pointerId, sx, sy, t: performance.now(), moved: false };
+  pointerDown(e, sx, sy);
+  if (drag) drag.pid = e.pointerId;
+});
+
+function pointerDown(e, sx, sy) {
   pointers.set(e.pointerId, { sx, sy });
   try { cv.setPointerCapture(e.pointerId); } catch (_) {}
 
   if (pointers.size === 2) {
+    tapStart = null;
     // pincer pour zoomer : on abandonne l'action en cours
     if (drag && drag.before && drag.changed) restore(drag.before);
     draft = null; drag = null; snapMark = null;
@@ -650,10 +724,12 @@ cv.addEventListener("pointerdown", (e) => {
   if (pointers.size > 2) return;
 
   const w = toWorld(sx, sy);
-  const touch = e.pointerType !== "mouse";
-  const tol = (touch ? 14 : 7) / view.s;
+  const touch = e.pointerType === "touch";
+  const tol = (touch ? 16 : e.pointerType === "pen" ? 9 : 7) / view.s;
+  // une fois le stylet utilisé, un doigt sur un outil de dessin déplace la vue
+  const fingerPan = penUsed && touch && tool !== "select";
 
-  if (e.button === 1 || e.button === 2 || spaceDown || tool === "pan") {
+  if (e.button === 1 || e.button === 2 || spaceDown || tool === "pan" || fingerPan) {
     drag = { mode: "pan", sx, sy, ox: view.ox, oy: view.oy };
     cv.classList.add("panning");
     return;
@@ -668,7 +744,7 @@ cv.addEventListener("pointerdown", (e) => {
     if (s) {
       for (const hd of handlesOf(s)) {
         const [hx, hy] = toScreen(hd.x, hd.y);
-        if (Math.hypot(hx - sx, hy - sy) < (touch ? 16 : 8)) {
+        if (Math.hypot(hx - sx, hy - sy) < (touch ? 24 : e.pointerType === "pen" ? 14 : 9)) {
           const d = { mode: "handle", k: hd.k, before: snapshot(), changed: false };
           if (s.type === "rect") {
             const opp = { nw: [s.x + s.w, s.y + s.h], ne: [s.x, s.y + s.h], se: [s.x, s.y], sw: [s.x + s.w, s.y] }[hd.k];
@@ -707,11 +783,14 @@ cv.addEventListener("pointerdown", (e) => {
   if (tool === "dim") draft = { type: "dim", x1: p.x, y1: p.y, x2: p.x, y2: p.y, off: 0, stage: 1 };
   drag = { mode: "draw" };
   draw();
-});
+}
 
 cv.addEventListener("pointermove", (e) => {
+  if (e.pointerType === "touch" && penDown) return;            // paume
   const { sx, sy } = localPos(e);
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { sx, sy });
+  if (tapStart && tapStart.id === e.pointerId && Math.hypot(sx - tapStart.sx, sy - tapStart.sy) > 10) tapStart.moved = true;
+  if (drag && drag.pid !== undefined && drag.pid !== e.pointerId) return;
 
   if (pinch && pointers.size === 2) {
     const [a, b] = [...pointers.values()];
@@ -808,10 +887,26 @@ cv.addEventListener("pointermove", (e) => {
 });
 
 function endPointer(e) {
+  if (!pointers.has(e.pointerId)) return;                     // pointeur ignoré (paume)
+  if (e.pointerType === "pen") penDown = false;
+  const ts = tapStart && tapStart.id === e.pointerId ? tapStart : null;
+  if (ts) tapStart = null;
+  endCore(e);
+  // double appui / double clic sur un élément : saisie de la mesure
+  if (!ts || ts.moved || e.type === "pointercancel" || performance.now() - ts.t > 400) { if (ts && ts.moved) lastTap = null; return; }
+  const now = performance.now();
+  if (lastTap && now - lastTap.t < 450 && Math.hypot(ts.sx - lastTap.sx, ts.sy - lastTap.sy) < 30) {
+    lastTap = null;
+    doubleTap(ts.sx, ts.sy, e.pointerType);
+  } else lastTap = { t: now, sx: ts.sx, sy: ts.sy };
+}
+
+function endCore(e) {
   pointers.delete(e.pointerId);
   if (pinch) { if (pointers.size < 2) pinch = null; persist(); return; }
   cv.classList.remove("panning");
   if (!drag) return;
+  if (drag.pid !== undefined && drag.pid !== e.pointerId) return;
   const d = drag; drag = null;
   if (d.mode === "pan") { persist(); return; }
   if (d.mode === "move" || d.mode === "handle") {
@@ -830,6 +925,79 @@ function endPointer(e) {
     finishDraft();
   }
 }
+/* ---------- saisie rapide de la mesure ---------- */
+const EDIT_FIELDS = { line: ["Longueur"], dim: ["Mesure"], rect: ["Largeur", "Hauteur"], circle: ["Diamètre"], text: ["Texte"] };
+let editorFields = [];
+
+function doubleTap(sx, sy, ptype) {
+  const w = toWorld(sx, sy);
+  const tol = (ptype === "touch" ? 16 : ptype === "pen" ? 9 : 7) / view.s;
+  const hit = hitTest(w.x, w.y, tol);
+  if (!hit) return;
+  draft = null; drag = null; snapMark = null;
+  selId = hit.id;
+  refresh();
+  openEditor(hit, sx, sy);
+}
+
+function openEditor(sh, sx, sy) {
+  const ed = $("#editor"), box = $("#edFields");
+  const wanted = EDIT_FIELDS[sh.type] || [];
+  editorFields = fieldsFor(sh).filter((f) => wanted.includes(f.label));
+  if (!editorFields.length) return;
+  $("#edTitle").textContent = TYPE_NAMES[sh.type];
+  box.innerHTML = "";
+  editorFields.forEach((f, i) => {
+    const wrap = document.createElement("div"); wrap.className = "ed-field";
+    const lab = document.createElement("label"); lab.textContent = f.label; lab.htmlFor = "ed-" + i;
+    const input = document.createElement("input");
+    input.id = "ed-" + i; input.type = "text";
+    if (f.text) { input.value = f.get(); wrap.append(lab, input); }
+    else {
+      input.inputMode = "decimal"; input.enterKeyHint = "done";
+      input.value = String(toUnit(f.get())).replace(".", ",");
+      const ui = document.createElement("div"); ui.className = "unit-input";
+      const u = document.createElement("span"); u.textContent = settings.unit;
+      ui.append(input, u); wrap.append(lab, ui);
+    }
+    f.input = input;
+    box.append(wrap);
+  });
+  ed.hidden = false;
+  // placement près du doigt, sans sortir de la zone de dessin
+  const ew = ed.offsetWidth, eh = ed.offsetHeight;
+  let left = sx + 20, top = sy - eh / 2;
+  if (left + ew > W - 8) left = sx - ew - 20;
+  ed.style.left = clamp(left, 8, Math.max(8, W - ew - 8)) + "px";
+  ed.style.top = clamp(top, 8, Math.max(8, H - eh - 8)) + "px";
+  const first = editorFields[0].input;
+  first.focus({ preventScroll: true }); first.select();
+}
+
+function closeEditor() {
+  $("#editor").hidden = true;
+  editorFields = [];
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
+
+$("#editor").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const values = [];
+  for (const f of editorFields) {
+    if (f.text) { values.push(f.input.value); continue; }
+    const v = parseFloat(f.input.value.replace(",", ".").replace(/\s/g, ""));
+    if (!isFinite(v) || v <= 0) { f.input.focus(); f.input.select(); return; }
+    values.push(clean(fromUnit(v)));
+  }
+  pushUndo(snapshot());
+  editorFields.forEach((f, i) => f.set(values[i]));
+  persist();
+  closeEditor();
+  refresh();
+});
+$("#edCancel").addEventListener("click", closeEditor);
+$("#editor").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); closeEditor(); } });
+
 cv.addEventListener("pointerup", endPointer);
 cv.addEventListener("pointercancel", endPointer);
 cv.addEventListener("pointerleave", () => { if (!drag && !draft) { snapMark = null; draw(); } });
@@ -843,7 +1011,7 @@ cv.addEventListener("wheel", (e) => {
 
 /* ---------- outils ---------- */
 const HINTS = {
-  select: "Cliquez un élément pour le sélectionner, glissez pour le déplacer. Glisser dans le vide déplace la vue.",
+  select: "Touchez un élément pour le sélectionner, glissez pour le déplacer. Double-touchez un trait pour changer sa mesure.",
   pan: "Glissez pour déplacer la vue.",
   line: "Cliquez-glissez pour tracer un trait. Maj : 0°/45°/90°.",
   rect: "Cliquez-glissez pour dessiner un panneau.",
@@ -892,7 +1060,9 @@ function fieldsFor(sh) {
     ];
     case "dim": return [
       len("X1", "x1"), len("Y1", "y1"), len("X2", "x2"), len("Y2", "y2"), len("Décalage", "off"),
-      { label: "Mesure", ro: true, get: () => fmt(dimGeom(sh).len) },
+      { label: "Mesure", len: true, get: () => dimGeom(sh).len, set: (v) => {
+        const g = dimGeom(sh), l = Math.max(0.1, v);
+        sh.x2 = clean(sh.x1 + g.ux * l); sh.y2 = clean(sh.y1 + g.uy * l); } },
     ];
     case "text": return [
       { label: "Texte", text: true, id: "f-text", get: () => sh.text, set: (v) => { sh.text = v || "Texte"; } },
